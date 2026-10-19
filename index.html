@@ -2,7 +2,10 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="HIIT">
 <title>HIIT 计时器</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -17,6 +20,10 @@
     color: #fff;
     overflow: hidden;
     user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    /* 适配 iPhone 刘海/底部安全区 */
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   }
 
   .screen {
@@ -163,12 +170,12 @@
 
   <div class="field">
     <label>组数</label>
-    <input id="groupsInput" type="number" min="1" step="1" value="4">
+    <input id="groupsInput" type="number" min="1" step="1" value="4" inputmode="numeric">
   </div>
 
   <div class="field">
     <label>每组项目数</label>
-    <input id="itemsInput" type="number" min="1" step="1" value="4">
+    <input id="itemsInput" type="number" min="1" step="1" value="4" inputmode="numeric">
   </div>
 
   <button id="startBtn" class="round-btn">开始</button>
@@ -224,9 +231,10 @@ const $doneSub     = document.getElementById('doneSub');
 /* ============================================================
    状态
    ============================================================ */
-let groupsTotal = 0;
-let itemsTotal  = 0;
-let cancelled   = false;   // 是否被用户中断
+let groupsTotal   = 0;
+let itemsTotal    = 0;
+let cancelled     = false;   // 是否被用户中断
+let isTimerRunning = false;  // 计时器是否正在运行（用于屏幕常亮）
 
 /* ============================================================
    页面切换
@@ -262,7 +270,97 @@ function beep(freq = 660, duration = 0.12, volume = 0.15) {
 }
 
 /* ============================================================
-   倒计时核心：返回一个 Promise，秒数走完才 resolve
+   ★★★ 屏幕常亮：Wake Lock API ★★★
+   ============================================================ */
+let wakeLock = null;
+
+async function requestWakeLock() {
+  if (!('wakeLock' in navigator)) {
+    console.warn('Wake Lock API 不支持');
+    return false;
+  }
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+    console.log('✅ 屏幕常亮已开启');
+    wakeLock.addEventListener('release', () => {
+      console.log('⚠️ 屏幕常亮锁已被释放');
+      wakeLock = null;
+      // 如果计时器仍在运行（例如被系统因切后台释放），尝试补回
+      if (isTimerRunning && document.visibilityState === 'visible') {
+        requestWakeLock().then(ok => { if (!ok) enableSilentAudio(); });
+      }
+    });
+    return true;
+  } catch (err) {
+    console.warn('❌ Wake Lock 请求失败:', err);
+    return false;
+  }
+}
+
+function releaseWakeLock() {
+  if (wakeLock) {
+    try { wakeLock.release(); } catch (e) {}
+    wakeLock = null;
+  }
+}
+
+/* ============================================================
+   ★★★ 屏幕常亮：静音音频降级方案（iOS 主屏幕模式保险）★★★
+   ============================================================ */
+let silentAudio = null;
+
+function enableSilentAudio() {
+  if (silentAudio) return;
+  try {
+    // 极短的静音 WAV（base64）
+    const silentWav = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+    silentAudio = new Audio(silentWav);
+    silentAudio.loop = true;
+    silentAudio.volume = 0.01; // 接近静音，但保留一点音量更稳定
+    const p = silentAudio.play();
+    if (p && typeof p.catch === 'function') {
+      p.catch(err => console.warn('静音音频播放失败:', err));
+    }
+    console.log('🔇 已启用静音音频保活');
+  } catch (e) {
+    console.warn('静音音频初始化失败:', e);
+    silentAudio = null;
+  }
+}
+
+function disableSilentAudio() {
+  if (silentAudio) {
+    try {
+      silentAudio.pause();
+      silentAudio.src = '';
+    } catch (e) {}
+    silentAudio = null;
+    console.log('🔈 已关闭静音音频保活');
+  }
+}
+
+/* 统一的“开启常亮”入口 */
+async function enableKeepAwake() {
+  const ok = await requestWakeLock();
+  if (!ok) enableSilentAudio();
+}
+
+/* 统一的“关闭常亮”入口 */
+function disableKeepAwake() {
+  releaseWakeLock();
+  disableSilentAudio();
+}
+
+/* 页面回到前台时重新申请（Wake Lock 会被系统自动释放） */
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState === 'visible' && isTimerRunning) {
+    console.log('页面回到前台，重新申请屏幕常亮');
+    await enableKeepAwake();
+  }
+});
+
+/* ============================================================
+   倒计时核心
    ============================================================ */
 function countdown(seconds, onTick) {
   return new Promise((resolve, reject) => {
@@ -278,7 +376,6 @@ function countdown(seconds, onTick) {
     render(seconds);
 
     const ticker = setInterval(() => {
-      // 被中断
       if (cancelled) {
         clearInterval(ticker);
         reject('cancelled');
@@ -296,7 +393,6 @@ function countdown(seconds, onTick) {
       }
 
       const display = Math.ceil(remain);
-      // 最后 3 秒滴答提示
       if (display !== lastShown && display <= 3) beep(760, 0.07, 0.12);
       render(display);
     }, 40);
@@ -330,12 +426,16 @@ function setCountdown(n) {
    主流程
    ============================================================ */
 async function runWorkout() {
+  isTimerRunning = true;
+  // 必须在用户手势的调用链中申请（“开始”按钮点击后立即调用）
+  await enableKeepAwake();
+
   try {
     for (let g = 1; g <= groupsTotal; g++) {
       for (let i = 1; i <= itemsTotal; i++) {
         setProgress(g, i);
 
-        /* ---- 运动 40 秒 ---- */
+        /* ---- 运动 ---- */
         setPhase('运动', 'work');
         beep(880, 0.18, 0.18);
         await countdown(WORK_TIME, setCountdown);
@@ -361,6 +461,10 @@ async function runWorkout() {
 
   } catch (err) {
     if (err !== 'cancelled') console.error(err);
+  } finally {
+    // 无论正常完成还是被中断，都释放屏幕常亮
+    isTimerRunning = false;
+    disableKeepAwake();
   }
 }
 
@@ -392,11 +496,15 @@ document.getElementById('startBtn').addEventListener('click', () => {
 
 document.getElementById('stopBtn').addEventListener('click', () => {
   cancelled = true;
+  isTimerRunning = false;
+  disableKeepAwake();
   showScreen('setup');
 });
 
 document.getElementById('restartBtn').addEventListener('click', () => {
   cancelled = true;
+  isTimerRunning = false;
+  disableKeepAwake();
   showScreen('setup');
 });
 </script>

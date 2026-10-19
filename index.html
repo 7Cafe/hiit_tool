@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>HIIT 计时器</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(circle at 50% 0%, #1d1d2b 0%, #0c0c12 70%);
+    color: #fff;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  .screen {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 22px;
+    width: 100%;
+    min-height: 100vh;
+    padding: 24px;
+  }
+  .screen.active { display: flex; }
+
+  h1 { font-size: 26px; letter-spacing: 4px; font-weight: 600; color: #cfd3e6; }
+
+  /* ---------- 设置页 ---------- */
+  .field {
+    width: 260px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .field label { font-size: 14px; color: #8b90a8; letter-spacing: 1px; }
+  .field input {
+    padding: 14px;
+    font-size: 22px;
+    text-align: center;
+    color: #fff;
+    background: #1a1a26;
+    border: 1.5px solid #2c2c3d;
+    border-radius: 14px;
+    outline: none;
+    transition: border-color .2s, box-shadow .2s;
+    font-variant-numeric: tabular-nums;
+  }
+  .field input:focus {
+    border-color: #ff5a4a;
+    box-shadow: 0 0 0 4px rgba(255, 90, 74, .15);
+  }
+
+  /* ---------- 圆形开始按钮 ---------- */
+  .round-btn {
+    width: 150px;
+    height: 150px;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    color: #fff;
+    background: linear-gradient(150deg, #ff7a5c, #e63946);
+    box-shadow: 0 12px 34px rgba(230, 57, 70, .45),
+                inset 0 -8px 16px rgba(0, 0, 0, .22),
+                inset 0 8px 16px rgba(255, 255, 255, .18);
+    transition: transform .12s ease, box-shadow .12s ease;
+  }
+  .round-btn:hover { transform: translateY(-2px); }
+  .round-btn:active {
+    transform: scale(.94);
+    box-shadow: 0 6px 18px rgba(230, 57, 70, .4),
+                inset 0 -4px 10px rgba(0, 0, 0, .25);
+  }
+
+  /* ---------- 计时页 ---------- */
+  .progress {
+    font-size: 15px;
+    letter-spacing: 2px;
+    color: #8b90a8;
+    font-variant-numeric: tabular-nums;
+  }
+  .progress b { color: #e7e9f5; font-weight: 600; }
+
+  .phase {
+    font-size: 78px;
+    font-weight: 800;
+    letter-spacing: 12px;
+    line-height: 1.1;
+    text-indent: 12px; /* 抵消 letter-spacing 造成的偏右 */
+    transition: color .3s, text-shadow .3s;
+  }
+  .phase.work {
+    color: #ff5a4a;
+    text-shadow: 0 0 38px rgba(255, 90, 74, .55);
+    animation: pulse 1s ease-in-out infinite;
+  }
+  .phase.rest {
+    color: #3ed6a3;
+    text-shadow: 0 0 38px rgba(62, 214, 163, .45);
+    animation: none;
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.045); }
+  }
+
+  .countdown {
+    font-size: 132px;
+    font-weight: 200;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 2px;
+  }
+  .countdown.work { color: #fff; }
+  .countdown.rest { color: #d8f7ec; }
+  .countdown.urgent { color: #ffd166; }
+
+  .stop-btn {
+    margin-top: 10px;
+    padding: 12px 34px;
+    font-size: 15px;
+    letter-spacing: 2px;
+    color: #b9bed4;
+    background: transparent;
+    border: 1.5px solid #33344a;
+    border-radius: 30px;
+    cursor: pointer;
+    transition: all .2s;
+  }
+  .stop-btn:hover { color: #fff; border-color: #ff5a4a; }
+
+  /* ---------- 完成页 ---------- */
+  .done-title {
+    font-size: 40px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    color: #3ed6a3;
+    text-shadow: 0 0 34px rgba(62, 214, 163, .5);
+  }
+  .done-sub { font-size: 15px; color: #8b90a8; letter-spacing: 2px; }
+
+  @media (max-width: 420px) {
+    .phase { font-size: 58px; letter-spacing: 8px; }
+    .countdown { font-size: 100px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ========== 1. 开始页面 ========== -->
+<div id="setup" class="screen active">
+  <h1>HIIT 计时器</h1>
+
+  <div class="field">
+    <label>组数</label>
+    <input id="groupsInput" type="number" min="1" step="1" value="4">
+  </div>
+
+  <div class="field">
+    <label>每组项目数</label>
+    <input id="itemsInput" type="number" min="1" step="1" value="4">
+  </div>
+
+  <button id="startBtn" class="round-btn">开始</button>
+</div>
+
+<!-- ========== 2. 计时页面 ========== -->
+<div id="timer" class="screen">
+  <div class="progress">
+    第 <b id="curGroup">1</b> / <b id="totalGroup">1</b> 组
+    &nbsp;·&nbsp;
+    第 <b id="curItem">1</b> / <b id="totalItem">1</b> 项
+  </div>
+
+  <div id="phase" class="phase work">运动</div>
+  <div id="countdown" class="countdown work">40</div>
+
+  <button id="stopBtn" class="stop-btn">停止</button>
+</div>
+
+<!-- ========== 3. 完成页面 ========== -->
+<div id="done" class="screen">
+  <div class="done-title">训练完成！</div>
+  <div class="done-sub" id="doneSub"></div>
+  <button id="restartBtn" class="round-btn">再来</button>
+</div>
+
+<script>
+/* ============================================================
+   配置
+   ============================================================ */
+const WORK_TIME      = 40;   // 运动时长（秒）
+const REST_TIME      = 20;   // 普通休息时长（秒）
+const REST_LAST_TIME = 60;   // 每组最后一个项目后的休息时长（秒）
+
+/* ============================================================
+   元素引用
+   ============================================================ */
+const screens = {
+  setup: document.getElementById('setup'),
+  timer: document.getElementById('timer'),
+  done:  document.getElementById('done')
+};
+const $groupsInput = document.getElementById('groupsInput');
+const $itemsInput  = document.getElementById('itemsInput');
+const $curGroup    = document.getElementById('curGroup');
+const $totalGroup  = document.getElementById('totalGroup');
+const $curItem     = document.getElementById('curItem');
+const $totalItem   = document.getElementById('totalItem');
+const $phase       = document.getElementById('phase');
+const $countdown   = document.getElementById('countdown');
+const $doneSub     = document.getElementById('doneSub');
+
+/* ============================================================
+   状态
+   ============================================================ */
+let groupsTotal = 0;
+let itemsTotal  = 0;
+let cancelled   = false;   // 是否被用户中断
+
+/* ============================================================
+   页面切换
+   ============================================================ */
+function showScreen(name) {
+  Object.values(screens).forEach(s => s.classList.remove('active'));
+  screens[name].classList.add('active');
+}
+
+/* ============================================================
+   简易提示音（Web Audio）
+   ============================================================ */
+let audioCtx = null;
+function beep(freq = 660, duration = 0.12, volume = 0.15) {
+  try {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const osc  = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    const now  = audioCtx.currentTime;
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, now);
+    gain.gain.setValueAtTime(volume, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(now);
+    osc.stop(now + duration + 0.02);
+  } catch (e) { /* 忽略音频错误 */ }
+}
+
+/* ============================================================
+   倒计时核心：返回一个 Promise，秒数走完才 resolve
+   ============================================================ */
+function countdown(seconds, onTick) {
+  return new Promise((resolve, reject) => {
+    const startTime = performance.now();
+    let lastShown = null;
+
+    const render = (n) => {
+      if (n !== lastShown) {
+        lastShown = n;
+        onTick(n);
+      }
+    };
+    render(seconds);
+
+    const ticker = setInterval(() => {
+      // 被中断
+      if (cancelled) {
+        clearInterval(ticker);
+        reject('cancelled');
+        return;
+      }
+
+      const elapsed = (performance.now() - startTime) / 1000;
+      const remain  = seconds - elapsed;
+
+      if (remain <= 0) {
+        clearInterval(ticker);
+        render(0);
+        resolve();
+        return;
+      }
+
+      const display = Math.ceil(remain);
+      // 最后 3 秒滴答提示
+      if (display !== lastShown && display <= 3) beep(760, 0.07, 0.12);
+      render(display);
+    }, 40);
+  });
+}
+
+/* ============================================================
+   界面更新
+   ============================================================ */
+function setProgress(group, item) {
+  $curGroup.textContent = group;
+  $curItem.textContent  = item;
+}
+
+function setPhase(text, type) {
+  $phase.textContent = text;
+  $phase.className = 'phase ' + type;
+  $countdown.className = 'countdown ' + type;
+}
+
+function setCountdown(n) {
+  $countdown.textContent = n;
+  if (n <= 3 && n > 0) {
+    $countdown.classList.add('urgent');
+  } else {
+    $countdown.classList.remove('urgent');
+  }
+}
+
+/* ============================================================
+   主流程
+   ============================================================ */
+async function runWorkout() {
+  try {
+    for (let g = 1; g <= groupsTotal; g++) {
+      for (let i = 1; i <= itemsTotal; i++) {
+        setProgress(g, i);
+
+        /* ---- 运动 40 秒 ---- */
+        setPhase('运动', 'work');
+        beep(880, 0.18, 0.18);
+        await countdown(WORK_TIME, setCountdown);
+
+        /* ---- 休息：最后一个项目 60 秒，否则 20 秒 ---- */
+        const isLastItem = (i === itemsTotal);
+        const restTime   = isLastItem ? REST_LAST_TIME : REST_TIME;
+
+        setPhase('休息', 'rest');
+        beep(520, 0.25, 0.16);
+        await countdown(restTime, setCountdown);
+
+        // 每完成一个项目（一组休息结束）消费一个项目
+      }
+      // 一组结束，消费下一组
+    }
+
+    /* ---- 全部完成 ---- */
+    $doneSub.textContent = `共完成 ${groupsTotal} 组 · ${groupsTotal * itemsTotal} 个项目`;
+    showScreen('done');
+    beep(1046, 0.5, 0.2);
+    setTimeout(() => beep(1318, 0.5, 0.18), 220);
+
+  } catch (err) {
+    if (err !== 'cancelled') console.error(err);
+  }
+}
+
+/* ============================================================
+   事件
+   ============================================================ */
+document.getElementById('startBtn').addEventListener('click', () => {
+  const g = parseInt($groupsInput.value, 10);
+  const i = parseInt($itemsInput.value, 10);
+
+  if (!Number.isFinite(g) || g < 1 || !Number.isFinite(i) || i < 1) {
+    alert('请输入大于 0 的整数！');
+    return;
+  }
+
+  groupsTotal = g;
+  itemsTotal  = i;
+
+  $totalGroup.textContent = g;
+  $totalItem.textContent  = i;
+  $curGroup.textContent   = 1;
+  $curItem.textContent    = 1;
+  $countdown.textContent  = WORK_TIME;
+
+  cancelled = false;
+  showScreen('timer');
+  runWorkout();
+});
+
+document.getElementById('stopBtn').addEventListener('click', () => {
+  cancelled = true;
+  showScreen('setup');
+});
+
+document.getElementById('restartBtn').addEventListener('click', () => {
+  cancelled = true;
+  showScreen('setup');
+});
+</script>
+</body>
+</html>
